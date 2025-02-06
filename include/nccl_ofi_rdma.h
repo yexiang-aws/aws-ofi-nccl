@@ -104,6 +104,7 @@ enum nccl_ofi_rdma_msg_type {
 	NCCL_OFI_RDMA_MSG_CTRL,
 	NCCL_OFI_RDMA_MSG_EAGER,
 	NCCL_OFI_RDMA_MSG_CLOSE,
+	NCCL_OFI_RDMA_MSG_CTRL_FI_WRITE,
 	NCCL_OFI_RDMA_MSG_INVALID = 15,
 	NCCL_OFI_RDMA_MSG_MAX = NCCL_OFI_RDMA_MSG_INVALID,
 };
@@ -241,6 +242,8 @@ typedef struct {
 typedef struct {
 	/* True for eager messages */
 	bool eager;
+	/* True for early completion write */
+	bool use_fi_write;
 	/* Remote destination buffer address */
 	uint64_t remote_buff;
 	/* Remote buffer length */
