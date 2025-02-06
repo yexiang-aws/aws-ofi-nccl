@@ -793,7 +793,7 @@ ncclResult_t nccl_net_ofi_irecv_v9(void* recvComm, int n, void** data,
 	 * Reset to NULL for now until optional receive completion logic is
 	 * implemented
 	 */
-	if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) {
+	if (ofi_nccl_is_early_completion_enabled() == 0 && *request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) {
 		*request = NULL;
 	}
 
