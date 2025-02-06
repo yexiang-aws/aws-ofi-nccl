@@ -396,6 +396,16 @@ OFI_NCCL_PARAM_INT(use_low_lat_tc, "USE_LOW_LATENCY_TC", 1);
  */
 OFI_NCCL_PARAM_INT(force_num_rails, "FORCE_NUM_RAILS", 0);
 
+/*
+ * 1 to enable eager mode, 0 to disable it.
+ */
+OFI_NCCL_PARAM_INT(is_eager_mode_enabled, "IS_EAGER_MODE_ENABLED", 1);
+
+/*
+ * 1 to enable early completion, 0 to disable it.
+ */
+OFI_NCCL_PARAM_INT(is_early_completion_enabled, "IS_EARLY_COMPLETION_ENABLED", 0);
+
 #ifdef __cplusplus
 } // End extern "C"
 #endif
