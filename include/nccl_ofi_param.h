@@ -108,12 +108,22 @@ int64_t ofi_nccl_##name() { \
                 NCCL_OFI_INFO(NCCL_INIT | NCCL_NET, \
                     "Invalid value %s provided for %s environment variable, using default %lu", \
                     str, "OFI_NCCL_" env, value); \
+                NCCL_OFI_WARN("0 Invalid value %s provided for %s environment variable, using default %lu", \
+                    str,                                                                        \
+                    "OFI_NCCL_" env,                                                            \
+                    value);                                                             \
             } else { \
                 value = v; \
                 NCCL_OFI_INFO(NCCL_INIT | NCCL_NET, "Setting %s environment variable to %lu", \
                               "OFI_NCCL_" env, value); \
+                NCCL_OFI_WARN("1 Setting %s environment variable to %lu",                             \
+                              "OFI_NCCL_" env,                                                      \
+                              value);                                                               \
             } \
         } \
+        NCCL_OFI_WARN("2 Setting %s environment variable to %lu",                             \
+                "OFI_NCCL_" env,                                                      \
+                value);                                                               \
 	initialized = true; \
     } \
     nccl_net_ofi_mutex_unlock(&ofi_nccl_param_lock_##name); \
@@ -399,12 +409,12 @@ OFI_NCCL_PARAM_INT(force_num_rails, "FORCE_NUM_RAILS", 0);
 /*
  * 1 to enable eager mode, 0 to disable it.
  */
-OFI_NCCL_PARAM_INT(is_eager_mode_enabled, "IS_EAGER_MODE_ENABLED", 1);
+OFI_NCCL_PARAM_INT(is_eager_mode_enabled, "EAGER_MODE", 0);
 
 /*
  * 1 to enable early completion, 0 to disable it.
  */
-OFI_NCCL_PARAM_INT(is_early_completion_enabled, "IS_EARLY_COMPLETION_ENABLED", 0);
+OFI_NCCL_PARAM_INT(is_early_completion_enabled, "EARLY_COMPL", 1);
 
 #ifdef __cplusplus
 } // End extern "C"

@@ -540,7 +540,6 @@ typedef struct nccl_net_ofi_rdma_send_comm {
 	bool received_close_message;
 	/* Counters for total sent and received control messages */
 	uint64_t n_ctrl_received;
-	uint64_t n_ctrl_fi_write_received;
 	uint64_t n_ctrl_expected;
 
 	bool comm_active;
