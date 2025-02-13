@@ -108,22 +108,12 @@ int64_t ofi_nccl_##name() { \
                 NCCL_OFI_INFO(NCCL_INIT | NCCL_NET, \
                     "Invalid value %s provided for %s environment variable, using default %lu", \
                     str, "OFI_NCCL_" env, value); \
-                NCCL_OFI_WARN("0 Invalid value %s provided for %s environment variable, using default %lu", \
-                    str,                                                                        \
-                    "OFI_NCCL_" env,                                                            \
-                    value);                                                             \
             } else { \
                 value = v; \
                 NCCL_OFI_INFO(NCCL_INIT | NCCL_NET, "Setting %s environment variable to %lu", \
                               "OFI_NCCL_" env, value); \
-                NCCL_OFI_WARN("1 Setting %s environment variable to %lu",                             \
-                              "OFI_NCCL_" env,                                                      \
-                              value);                                                               \
             } \
         } \
-        NCCL_OFI_WARN("2 Setting %s environment variable to %lu",                             \
-                "OFI_NCCL_" env,                                                      \
-                value);                                                               \
 	initialized = true; \
     } \
     nccl_net_ofi_mutex_unlock(&ofi_nccl_param_lock_##name); \
