@@ -820,6 +820,8 @@ ncclResult_t nccl_net_ofi_test(void* req, int* done, int* size)
 
 	nccl_net_ofi_req_t *base_req = (nccl_net_ofi_req_t *)req;
 	int ret = base_req->test(base_req, done, size);
+
+	// NCCL_OFI_WARN("DEBUG: nccl_net_ofi_test ret :%d, %d, %p", ret, *done, req);
 	return nccl_net_ofi_retval_translate(ret);
 }
 
