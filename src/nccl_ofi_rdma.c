@@ -1619,7 +1619,8 @@ static inline int process_completions(struct fi_cq_data_entry *cq_entry, uint64_
 		 */
 		if (comp_flags & FI_REMOTE_WRITE) {
 			/* Remote-initiated write is complete */
-			ret = handle_write_comp(&cq_entry[comp_idx], device, rail_id);
+			ret = 0;
+			// handle_write_comp(&cq_entry[comp_idx], device, rail_id);
 		} else {
 			struct fi_context2 *ctx = (struct fi_context2 *)cq_entry[comp_idx].op_context;
 			if (OFI_UNLIKELY(ctx == NULL)) {
@@ -5530,7 +5531,7 @@ static int post_rdma_write(nccl_net_ofi_rdma_req_t *req,
 
 	ssize_t rc;
 	/* Post RDMA write */
-	if (use_fi_write) {
+	if (false) {
 		rc = fi_write(comm_rail->local_ep, (void*)((uintptr_t)send_data->buff + xfer_info->offset),
 					xfer_info->msg_size, desc,
 					comm_rail->remote_addr,
