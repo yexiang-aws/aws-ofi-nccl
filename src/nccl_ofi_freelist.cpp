@@ -288,7 +288,7 @@ int nccl_ofi_freelist_add(nccl_ofi_freelist_t *freelist,
 	nccl_net_ofi_mem_undefined(b_end_aligned, b_end - b_end_aligned);
 
 	if (freelist->regmr_fn) {
-
+		printf("freelist->regmr_fn \n");
 		ret = freelist->regmr_fn(freelist->regmr_opaque, buffer,
 					 block_mem_size,
 					 &block->mr_handle);
@@ -300,6 +300,7 @@ int nccl_ofi_freelist_add(nccl_ofi_freelist_t *freelist,
 		block->mr_handle = NULL;
 	}
 
+	printf("block->entries \n");
 	block->entries = (nccl_ofi_freelist_elem_t *)
 		calloc(allocation_count, sizeof(*(block->entries)));
 	if (block->entries == NULL) {
