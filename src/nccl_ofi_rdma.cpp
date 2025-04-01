@@ -2823,6 +2823,8 @@ static int dereg_mr(nccl_net_ofi_rdma_mr_handle_t *mr_handle,
 		* the entry for this handle.
 		*/
 		nccl_net_ofi_mutex_lock(&mr_cache->lock);
+
+		printf("dereg_mr\n");
 		ret = nccl_ofi_mr_cache_del_entry(mr_cache, mr_handle);
 		nccl_net_ofi_mutex_unlock(&mr_cache->lock);
 		if (OFI_UNLIKELY(ret < 0)) {
@@ -2962,6 +2964,7 @@ static int reg_mr(nccl_net_ofi_rdma_domain_t *domain,
 		 * insert a missing entry
 		 */
 		nccl_net_ofi_mutex_lock(&mr_cache->lock);
+		printf("reg_mr inserted Key \n");
 		ret_handle = (nccl_net_ofi_rdma_mr_handle_t *)
 			nccl_ofi_mr_cache_lookup_entry(mr_cache, ckey);
 
@@ -3143,6 +3146,8 @@ static int freelist_deregmr_host_fn(void *handle)
 {
 	freelist_regmr_fn_handle_t *freelist_handle = (freelist_regmr_fn_handle_t *)handle;
 	assert(freelist_handle);
+
+	printf("freelist_deregmr_host_fn\n");
 	int ret = dereg_mr(freelist_handle->mr_handle, freelist_handle->domain);
 	if (OFI_UNLIKELY(ret != 0)) {
 		NCCL_OFI_WARN("Failed call to dereg_mr");

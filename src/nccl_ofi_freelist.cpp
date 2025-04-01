@@ -201,6 +201,7 @@ int nccl_ofi_freelist_fini(nccl_ofi_freelist_t *freelist)
 		   itself is located at the end of the allocation.  See
 		   note in freelist_add for reasoning */
 		if (freelist->deregmr_fn) {
+			printf("it's really here \n");
 			ret = freelist->deregmr_fn(block->mr_handle);
 			if (ret != 0) {
 				NCCL_OFI_WARN("Could not deregister freelist buffer %p with handle %p",
