@@ -555,46 +555,50 @@ static inline struct fid_domain* sendrecv_endpoint_get_ofi_domain(nccl_net_ofi_s
 
 
 /*
- * @brief	Registers memory region (both HOST and CUDA)
+ * @brief	Set memory registration request attributes
  *
- * @return	OFI memory handle for data transfer operations
+ * @param	key_pool
+ *		Device key pool
+ * @param	data
+ *		Memory region to be registered
+ * @param	size
+ *		Size of the memory region
+ * @param	type
+ *		Pointer type
+ *
+ * @return	Populated Memory registration attribute, on success
+ * @return	Populated I/O vector, on success
  * @return	0 on success
  *		non-zero on error
- */
-static int sendrecv_mr_buffers_register(nccl_net_ofi_sendrecv_domain_t *domain,
-					struct fid_ep *ep,
-					int dev_id,
-					nccl_ofi_mr_ckey_ref ckey,
-					int type,
-					nccl_net_ofi_sendrecv_mr_handle_t **mr_handle)
+ */ 
+static int set_mr_req_attr(nccl_ofi_mr_ckey_ref ckey,
+			   uint64_t *flags,
+			   int type,
+			   struct fi_mr_attr *mr_attr)
 {
 	int ret = 0;
-	struct fi_mr_attr mr_attr = {};
-	uint64_t regattr_flags = 0;
-	auto *ret_handle = new nccl_net_ofi_sendrecv_mr_handle_t{MR_KEY_INIT_VALUE, nullptr};
-	nccl_ofi_idpool_t *key_pool = &domain->base.mr_rkey_pool;
-
-	mr_attr.access = FI_SEND | FI_RECV;
-	nccl_ofi_mr_ckey_fill_mr_attrs(ckey, &mr_attr, &regattr_flags);
+	mr_attr->access = FI_SEND | FI_RECV;
+	nccl_ofi_mr_ckey_fill_mr_attrs(ckey, mr_attr, flags);
 	switch (type) {
 	case NCCL_PTR_HOST:
 		if (support_fi_rma) {
-			mr_attr.access |= FI_READ;
+			mr_attr->access |= FI_READ;
 		}
-		mr_attr.iface = FI_HMEM_SYSTEM;
+		mr_attr->iface = FI_HMEM_SYSTEM;
 		break;
 #if HAVE_CUDA
 	case NCCL_PTR_CUDA:
 		if (support_fi_rma) {
-			mr_attr.access |= FI_REMOTE_READ;
+			mr_attr->access |= FI_REMOTE_READ;
 		}
-		mr_attr.iface = FI_HMEM_CUDA;
+		mr_attr->iface = FI_HMEM_CUDA;
 
 		/* Get CUDA device ID */
-		ret = nccl_net_ofi_get_cuda_device_for_addr((void *)nccl_ofi_mr_ckey_baseaddr(ckey),
-		                                            &mr_attr.device.cuda);
+		ret = nccl_net_ofi_get_cuda_device_for_addr(
+			(void *)nccl_ofi_mr_ckey_baseaddr(ckey),
+		        &mr_attr->device.cuda);
 		if (OFI_UNLIKELY(ret != 0)) {
-			goto exit;
+			return ret;
 		}
 		break;
 #endif
@@ -614,8 +618,46 @@ static int sendrecv_mr_buffers_register(nccl_net_ofi_sendrecv_domain_t *domain,
 #endif
 	default:
 		ret = -EINVAL;
-		goto exit;
 	}
+
+	return ret;
+}
+
+
+/*
+ * @brief	Registers memory region (both HOST and CUDA)
+ *
+ * @return	OFI memory handle for data transfer operations
+ * @return	0 on success
+ *		non-zero on error
+ */
+static int reg_mr_on_device(nccl_net_ofi_sendrecv_domain_t *domain,
+					struct fid_ep *ofi_ep,
+					int dev_id,
+					nccl_ofi_mr_ckey_ref ckey,
+					int type,
+					nccl_net_ofi_sendrecv_mr_handle_t **mr_handle)
+{
+	/* Validate type of buffer */
+	bool valid_buffer_type = false;
+	if (type == NCCL_PTR_HOST) valid_buffer_type = true;
+#if HAVE_CUDA
+	if (type == NCCL_PTR_CUDA) valid_buffer_type = true;
+#endif
+#if HAVE_NEURON
+	if (type == NCCL_PTR_NEURON) valid_buffer_type = true;
+#endif
+
+	if(!valid_buffer_type) {
+		NCCL_OFI_WARN("Invalid buffer type provided: %d", type);
+		return -EINVAL;
+	}
+
+	int ret = 0;
+	struct fi_mr_attr mr_attr = {};
+	uint64_t regattr_flags = 0;
+	auto *ret_handle = new nccl_net_ofi_sendrecv_mr_handle_t{MR_KEY_INIT_VALUE, nullptr};
+	nccl_ofi_idpool_t *key_pool = &domain->base.mr_rkey_pool;
 
 	if (nccl_ofi_idpool_active(key_pool)) {
 		int key = nccl_ofi_idpool_allocate_id(key_pool);
@@ -627,6 +669,15 @@ static int sendrecv_mr_buffers_register(nccl_net_ofi_sendrecv_domain_t *domain,
 		mr_attr.requested_key = ret_handle->mr_key;
 	}
 
+	/* Fill memory registration request */
+	ret = set_mr_req_attr(ckey, &regattr_flags, type, &mr_attr);
+	if (OFI_UNLIKELY(ret != 0)) {
+		NCCL_OFI_WARN("Unable to set registration request attributes, "
+			      "(type = %d) for device %d. RC: %d, Error: %s",
+			      type, dev_id, ret, fi_strerror(-ret));
+		goto exit;
+	}
+
 	ret = fi_mr_regattr(domain->domain, &mr_attr, regattr_flags, &ret_handle->mr);
 	if (OFI_UNLIKELY(ret != 0)) {
 		NCCL_OFI_WARN("Unable to register memory (type = %d) for device %d. RC: %d, Error: %s",
@@ -635,7 +686,7 @@ static int sendrecv_mr_buffers_register(nccl_net_ofi_sendrecv_domain_t *domain,
 	}
 
 	if (endpoint_mr) {
-		ret = fi_mr_bind(ret_handle->mr, &ep->fid, 0);
+		ret = fi_mr_bind(ret_handle->mr, &ofi_ep->fid, 0);
 		if (OFI_UNLIKELY(ret != 0)) {
 			NCCL_OFI_WARN("Unable to bind MR to EP (type = %d) for device %d. RC: %d, Error: %s",
 				      type, dev_id, ret, fi_strerror(-ret));
@@ -658,6 +709,71 @@ exit:
 	}
 	return ret;
 }
+
+
+static int sendrecv_reg_mr(nccl_net_ofi_sendrecv_domain_t *domain,
+			   int dev_id,
+			   struct fid_ep *ofi_ep,
+			   nccl_ofi_mr_ckey_ref ckey,
+			   int type,
+			   nccl_net_ofi_sendrecv_mr_handle_t **mr_handle)
+{
+	assert(domain);
+
+	int ret = 0;
+	nccl_net_ofi_sendrecv_mr_handle_t *ret_handle = nullptr;
+	*mr_handle = nullptr;
+	nccl_ofi_mr_cache_t *mr_cache = domain->base.mr_cache;
+
+	printf("sendrecv_reg_mr before mr_cache \n");
+	if (mr_cache) {
+		/*
+		 * MR cache is locked between lookup and insert, to be sure we
+		 * insert a missing entry
+		 */
+		nccl_net_ofi_mutex_lock(&mr_cache->lock);
+		printf("sendrecv_reg_mr inserted Key \n");
+		ret_handle = static_cast<nccl_net_ofi_sendrecv_mr_handle_t *>(
+			nccl_ofi_mr_cache_lookup_entry(mr_cache, ckey));
+
+		if (ret_handle) {
+			/* Cache hit */
+			goto unlock;
+		}
+		/* Cache miss */
+	}
+	printf("before reg_mr_on_device \n");
+	ret = reg_mr_on_device(domain, ofi_ep, dev_id, ckey, type, &ret_handle);
+	if (OFI_UNLIKELY(ret_handle == NULL || ret != 0)) {
+		ret_handle = NULL;
+		goto unlock;
+	}
+
+	if (mr_cache) {
+		ret = nccl_ofi_mr_cache_insert_entry(mr_cache, ckey, ret_handle);
+		if (OFI_UNLIKELY(ret != 0)) {
+			/* MR cache insert failed. Deregister memory region without
+			 * trying to delete MR cache entry.
+			 */
+			if (sendrecv_comm_mr_base_dereg(ret_handle, domain) != 0) {
+				NCCL_OFI_WARN("Error deregistering memory region for addr %ld (%s)",
+					      nccl_ofi_mr_ckey_baseaddr(ckey), nccl_ofi_mr_ckey_type_str(ckey));
+			}
+			ret_handle = NULL;
+			goto unlock;
+		}
+	}
+
+unlock:
+	if (mr_cache) {
+		nccl_net_ofi_mutex_unlock(&mr_cache->lock);
+	}
+
+	*mr_handle = ret_handle;
+	return ret;
+}
+
+
 /*
  * @brief	Registers memory region (both HOST and CUDA)
  *
@@ -720,31 +836,7 @@ static int sendrecv_mr_buffers_internal_register(nccl_net_ofi_sendrecv_domain_t 
 
 	nccl_ofi_mr_ckey_t cache_key = nccl_ofi_mr_ckey_mk_vec(data, size);
 	printf("sendrecv_mr_buffers_internal_register \n");
-	return sendrecv_mr_buffers_register(domain, ep, dev_id, &cache_key, type, mr_handle);
-}
-
-
-static int sendrecv_mr_base_register(nccl_net_ofi_sendrecv_domain_t *domain,
-				     struct fid_ep *ep, int dev_id,
-				     nccl_ofi_mr_ckey_ref ckey, int type,
-				     nccl_net_ofi_sendrecv_mr_handle_t **mhandle)
-{
-	/* Validate type of buffer */
-	bool valid_buffer_type = false;
-	if (type == NCCL_PTR_HOST) valid_buffer_type = true;
-#if HAVE_CUDA
-	if (type == NCCL_PTR_CUDA) valid_buffer_type = true;
-#endif
-#if HAVE_NEURON
-	if (type == NCCL_PTR_NEURON) valid_buffer_type = true;
-#endif
-
-	if(!valid_buffer_type) {
-		NCCL_OFI_WARN("Invalid buffer type provided: %d", type);
-		return -EINVAL;
-	}
-
-	return sendrecv_mr_buffers_register(domain, ep, dev_id, ckey, type, mhandle);
+	return sendrecv_reg_mr(domain, dev_id, ep, &cache_key, type, mr_handle);
 }
 
 
@@ -804,18 +896,17 @@ static int sendrecv_comm_mr_base_dereg(nccl_net_ofi_sendrecv_mr_handle_t *mr_han
 }
 
 
-static int sendrecv_comm_mr_base_reg(nccl_net_ofi_comm_t *base_comm,
-				     nccl_ofi_mr_ckey_ref ckey,
-				     int type,
-				     nccl_net_ofi_sendrecv_mr_handle_t **mr_handle)
+static int sendrecv_comm_mr_base_reg(nccl_net_ofi_sendrecv_ep_t *ep,
+	nccl_ofi_mr_ckey_ref ckey,
+	int type,
+	nccl_net_ofi_sendrecv_mr_handle_t **mr_handle)
 {
-	/* Retrieve and validate endpoint */
-	nccl_net_ofi_sendrecv_ep_t *ep =
-		(nccl_net_ofi_sendrecv_ep_t *)base_comm->ep;
 	if (OFI_UNLIKELY(ep == NULL)) {
 		NCCL_OFI_WARN("Invalid endpoint provided");
 		return -EINVAL;
 	}
+        nccl_net_ofi_sendrecv_domain_t *domain = sendrecv_endpoint_get_domain(ep);
+	assert(domain != NULL);
 
 	/* Retrieve and validate device */
 	nccl_net_ofi_sendrecv_device_t *device =
@@ -825,73 +916,26 @@ static int sendrecv_comm_mr_base_reg(nccl_net_ofi_comm_t *base_comm,
 		return -EINVAL;
 	}
 
-	nccl_net_ofi_sendrecv_domain_t *domain = sendrecv_endpoint_get_domain(ep);
-	assert(domain != NULL);
-
-	int dev_id = device->base.dev_id;
-
-	int ret = 0;
-	nccl_ofi_mr_cache_t *mr_cache = domain->base.mr_cache;
-	nccl_net_ofi_sendrecv_mr_handle_t *ret_handle = nullptr;
-
-	printf("sendrecv_comm_mr_base_reg before mr_cache \n");
-	if (mr_cache) {
-		/*
-		 * MR cache is locked between lookup and insert, to be sure we
-		 * insert a missing entry
-		 */
-		nccl_net_ofi_mutex_lock(&mr_cache->lock);
-		printf("sendrecv_comm_mr_base_reg inserted Key \n");
-		ret_handle = static_cast<nccl_net_ofi_sendrecv_mr_handle_t *>(
-			nccl_ofi_mr_cache_lookup_entry(mr_cache, ckey));
-
-		if (ret_handle) {
-			/* Cache hit */
-			goto unlock;
-		}
-		/* Cache miss */
-	}
-	printf("before sendrecv_mr_base_register \n");
-
-	ret = sendrecv_mr_base_register(domain, ep->ofi_ep, dev_id, ckey, type, &ret_handle);
-	if (OFI_UNLIKELY(ret_handle == NULL || ret != 0)) {
-		ret_handle = NULL;
-		goto unlock;
-	}
-
-	if (mr_cache) {
-		ret = nccl_ofi_mr_cache_insert_entry(mr_cache, ckey, ret_handle);
-		if (OFI_UNLIKELY(ret != 0)) {
-			/* MR cache insert failed. Deregister memory region without
-			 * trying to delete MR cache entry.
-			 */
-			if (sendrecv_comm_mr_base_dereg(ret_handle, domain) != 0) {
-				NCCL_OFI_WARN("Error deregistering memory region for addr %ld (%s)",
-					      nccl_ofi_mr_ckey_baseaddr(ckey), nccl_ofi_mr_ckey_type_str(ckey));
-			}
-			ret_handle = NULL;
-			goto unlock;
-		}
-	}
-
-unlock:
-	if (mr_cache) {
-		nccl_net_ofi_mutex_unlock(&mr_cache->lock);
-	}
-
-	*mr_handle = ret_handle;
-	return ret;
+	return sendrecv_reg_mr(domain,
+			       device->base.dev_id,
+			       ep->ofi_ep,
+			       ckey,
+			       type,
+			       (nccl_net_ofi_sendrecv_mr_handle_t **)mr_handle);
 }
+
 
 static int sendrecv_send_comm_reg_mr(nccl_net_ofi_send_comm_t *comm, nccl_ofi_mr_ckey_ref ckey, int type, void **mhandle)
 {
-	return sendrecv_comm_mr_base_reg(&comm->base, ckey, type, reinterpret_cast<nccl_net_ofi_sendrecv_mr_handle_t **>(mhandle));
+	return sendrecv_comm_mr_base_reg((nccl_net_ofi_sendrecv_ep_t *)comm->base.ep, ckey, type, reinterpret_cast<nccl_net_ofi_sendrecv_mr_handle_t **>(mhandle));
 }
+
 
 static int sendrecv_recv_comm_reg_mr(nccl_net_ofi_recv_comm_t *comm, nccl_ofi_mr_ckey_ref ckey, int type, void **mhandle)
 {
-	return sendrecv_comm_mr_base_reg(&comm->base, ckey, type, reinterpret_cast<nccl_net_ofi_sendrecv_mr_handle_t **>(mhandle));
+	return sendrecv_comm_mr_base_reg((nccl_net_ofi_sendrecv_ep_t *)comm->base.ep, ckey, type, reinterpret_cast<nccl_net_ofi_sendrecv_mr_handle_t **>(mhandle));
 }
+
 
 static int sendrecv_recv_comm_dereg_mr(nccl_net_ofi_recv_comm_t *recv_comm,
 				       nccl_net_ofi_mr_handle_t *mhandle)
