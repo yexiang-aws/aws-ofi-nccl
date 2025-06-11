@@ -119,6 +119,7 @@ static ncclResult_t nccl_ofi_tuner_init(size_t nRanks, size_t nNodes, ncclDebugL
 	if (region_support && !(model_support && is_force_type_model)) {
 		ctx->type = NCCL_OFI_TUNER_TYPE_REGION;
 		ctx->init_internal = region_init_internal;
+		ctx->get_coll_info_internal_v4 = region_get_coll_info_internal_v4;
 		ctx->get_coll_info_internal_v3 = region_get_coll_info_internal_v3;
 		ctx->get_coll_info_internal_v2 = region_get_coll_info_internal_v2;
 		ctx->destroy_internal = region_destroy_internal;
@@ -161,12 +162,12 @@ static ncclResult_t nccl_ofi_tuner_get_coll_info(void *context,
 	ncclResult_t ret;
 
 	nccl_ofi_tuner_context_t *ctx = (nccl_ofi_tuner_context_t *)context;
-	if (ctx == NULL || ctx->get_coll_info_internal_v3 == NULL) {
+	if (ctx == NULL || ctx->get_coll_info_internal_v4 == NULL) {
 		/* Fall back to NCCL's tuner */
 		return ncclSuccess;
 	}
 
-	ret = ctx->get_coll_info_internal_v3(ctx, collType, nBytes, numPipeOps, collCostTable, numAlgo, numProto, nChannels);
+	ret = ctx->get_coll_info_internal_v4(ctx, collType, nBytes, numPipeOps, collCostTable, numAlgo, numProto, nChannels);
 
 	return ret;
 }

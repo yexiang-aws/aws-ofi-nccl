@@ -1315,6 +1315,79 @@ exit:
 	return ret;
 }
 
+
+
+ncclResult_t region_get_coll_info_internal_v4(nccl_ofi_tuner_context_t *ctx,
+					   ncclFunc_t collType,
+					   size_t nBytes,
+					   int numPipeOps,
+					   float **collCostTable,
+					   int numAlgo,
+					   int numProto,
+					   int *nChannels)
+{
+	ncclResult_t ret = ncclSuccess;
+	nccl_ofi_tuner_region_context_t *region_ctx = (nccl_ofi_tuner_region_context_t *)ctx->type_ctx;
+	float(*table)[NCCL_NUM_PROTOCOLS] = (float(*)[NCCL_NUM_PROTOCOLS])collCostTable;
+	int in_out = -1;
+	int algorithm = NCCL_ALGO_UNDEF;
+	int protocol = NCCL_PROTO_UNDEF;
+	nccl_ofi_tuner_point_t p;
+
+	if (region_ctx == NULL || region_ctx->regions[collType] == NULL) {
+		/* we do not update cost table. Fall back to NCCL's tuner */
+		NCCL_OFI_INFO(NCCL_TUNING, "Region Context is not ready. Fall back to NCCL's tuner.");
+		ret = ncclSuccess;
+		goto exit;
+	}
+
+	/* Skip when two nodes or lesser because the regions are not well defined and fallback
+	 * to NCCL's internal tunings */
+	if (region_ctx->dims.num_nodes <= 2) {
+		ret = ncclSuccess;
+		goto exit;
+	}
+	
+	p.x = (double)nBytes;
+	p.y = (double)region_ctx->dims.num_ranks;
+
+	/* Check all regions */
+	for (size_t i = 0; i < region_ctx->num_regions[collType] && in_out < 0; i++) {
+		algorithm = region_ctx->regions[collType][i].algorithm;
+		protocol = region_ctx->regions[collType][i].protocol;
+		if (algorithm >= numAlgo || protocol >= numProto ||
+		    table[algorithm][protocol] == NCCL_ALGO_PROTO_IGNORE) {
+			/* Either NCCL says this combination is not valid/applicable or the algorithm or protocol is
+			 * not in the table, hence it is not supported by this NCCL version. */
+			continue;
+		}
+
+		in_out = is_inside_region(p, &region_ctx->regions[collType][i]);
+		if (in_out >= 0) {
+			table[algorithm][protocol] = 0.0;
+
+			NCCL_OFI_INFO(NCCL_TUNING,
+				      "Region Tuner choosing algo %d proto %d with cost %.8f µsecs for coll %d size %ld.",
+				      algorithm,
+				      protocol,
+				      table[algorithm][protocol],
+				      collType,
+				      nBytes);
+		}
+	}
+
+	if (in_out < 0) {
+		NCCL_OFI_INFO(NCCL_TUNING, "Falling back to NCCL's tuner for coll %d size %ld.", collType, nBytes);
+	}
+
+exit:
+	/* Set the number of channels to use. */
+	*nChannels = ofi_nccl_tuner_num_channels();
+	NCCL_OFI_INFO(NCCL_TUNING, "Setting nChannels to %d .", *nChannels);
+	return ret;
+}
+
+
 ncclResult_t region_destroy_internal(nccl_ofi_tuner_context_t *ctx)
 {
 	nccl_ofi_tuner_region_context_t *region_ctx = (nccl_ofi_tuner_region_context_t *)ctx->type_ctx;
