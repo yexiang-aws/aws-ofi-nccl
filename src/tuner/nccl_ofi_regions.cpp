@@ -10,6 +10,7 @@
 
 #include "tuner/nccl_ofi_tuner_region.h"
 #include "nccl_ofi_param.h"
+#include "nccl_ofi_system.h"
 
 
 typedef struct nccl_ofi_tuner_region_dims {
@@ -1264,6 +1265,7 @@ ncclResult_t region_get_coll_info_internal_v3(nccl_ofi_tuner_context_t *ctx,
 	int algorithm = NCCL_ALGO_UNDEF;
 	int protocol = NCCL_PROTO_UNDEF;
 	nccl_ofi_tuner_point_t p;
+	auto platform_type = nccl_net_ofi_get_product_name();
 
 	if (region_ctx == NULL || region_ctx->regions[collType] == NULL) {
 		/* we do not update cost table. Fall back to NCCL's tuner */
@@ -1309,8 +1311,14 @@ ncclResult_t region_get_coll_info_internal_v3(nccl_ofi_tuner_context_t *ctx,
 
 	if (in_out < 0) {
 		NCCL_OFI_INFO(NCCL_TUNING, "Falling back to NCCL's tuner for coll %d size %ld.", collType, nBytes);
+		goto exit;
 	}
 
+	/* Set max channels to 16 for [8,16] MB message sizes on P6 platform */
+	if (strcmp(platform_type, "p6-b200.48xlarge") == 0 && nBytes >= 8388608 && nBytes <= 16777216) {
+		*nChannels = 16;
+	}
+	NCCL_OFI_INFO(NCCL_TUNING, "Setting nChannels to %d at nBytes=%ld.", *nChannels, nBytes);
 exit:
 	return ret;
 }
