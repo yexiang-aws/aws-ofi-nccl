@@ -49,7 +49,7 @@ AC_DEFUN([CHECK_PKG_CUDA], [
          CPPFLAGS="${CUDA_CPPFLAGS} ${CPPFLAGS}"
         ])
 
-  AS_IF([test "${check_pkg_found}" = "yes"],
+  AS_IF([test "${check_pkg_found}" = "yes" -a "x${enable_cudart_dynamic}" = "xno"],
         [AC_SEARCH_LIBS(
          [cudaGetDriverEntryPoint],
          [${cudart_lib}],
